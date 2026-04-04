@@ -131,7 +131,9 @@ source files → tree-sitter AST → symbol + reference extraction → SQLite
 
 ## Supported languages
 
-TypeScript (`.ts`, `.tsx`) and Kotlin (`.kt`, `.kts`). Adding a language means writing a config object and plugging in a tree-sitter grammar — [see the wiki](../../wiki/Development).
+TypeScript (`.ts`, `.tsx`) and Kotlin (`.kt`, `.kts`) out of the box.
+
+Anything else tree-sitter supports — which is [a lot](https://tree-sitter.github.io/tree-sitter/#available-parsers) — can be added by writing a small config object and plugging in the grammar. No changes to the core. [See the wiki](../../wiki/Development) if you want to add one.
 
 ---
 
