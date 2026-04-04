@@ -1,0 +1,28 @@
+{
+  "name": "code-indexer",
+  "version": "1.0.0",
+  "description": "Language-agnostic code indexer with Tree-sitter + SQLite",
+  "type": "module",
+  "bin": {
+    "code-indexer": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.6.0",
+    "tree-sitter": "^0.22.4",
+    "tree-sitter-kotlin": "^0.3.1",
+    "tree-sitter-typescript": "^0.23.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  }
+}

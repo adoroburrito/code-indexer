@@ -1,0 +1,329 @@
+.TH CODE-INDEXER 1 "2026-04-04" "1.0.0" "code-indexer manual"
+
+.SH NAME
+code-indexer \- index source code into SQLite and query it
+
+.SH SYNOPSIS
+.B code-indexer
+.I command
+.RI [ options ]
+
+.SH DESCRIPTION
+.B code-indexer
+parses TypeScript and Kotlin source files using Tree-sitter, extracts
+symbols (functions, classes, interfaces, methods, types) and references,
+and stores everything in a SQLite database.
+
+The primary use case is enabling precise, token-efficient context retrieval
+for LLMs working with large codebases \(em instead of dumping raw files into
+a prompt, you query the database for exactly the context you need.
+
+.SH COMMANDS
+
+.TP
+.BR "index " \fI<dir>\fR
+Recursively index all TypeScript (.ts, .tsx) and Kotlin (.kt, .kts) files
+under \fIdir\fR. Files are hashed (SHA-256) so re-running only re-indexes
+changed files.
+
+Progress lines are written to stderr. Nothing is written to stdout.
+
+.RS
+.B Options:
+.RS
+.TP
+.BI \-\-db " path"
+Path to the SQLite database file. Default: ./code-indexer.db
+.RE
+.RE
+
+.TP
+.BR "find-symbol " \fI<name>\fR
+Find symbol definitions by exact name. Returns one line per match.
+
+.RS
+.B Output format:
+.RS
+kind TAB name TAB path TAB startLine-endLine
+.RE
+
+.B Options:
+.RS
+.TP
+.BI \-\-kind " kind"
+Filter by symbol kind. Values: function, class, interface, method,
+variable, type, enum.
+.TP
+.BI \-\-lang " lang"
+Filter by language. Values: typescript, kotlin.
+.TP
+.B \-\-json
+Output as NDJSON (one JSON object per line).
+.RE
+.RE
+
+.TP
+.BR "find-refs " \fI<name>\fR
+Find all references to an identifier (every occurrence that is not a
+definition). Returns one line per reference.
+
+.RS
+.B Output format:
+.RS
+path TAB line TAB column
+.RE
+
+.B Options:
+.RS
+.TP
+.BI \-\-lang " lang"
+Filter by language.
+.TP
+.B \-\-json
+Output as NDJSON.
+.RE
+.RE
+
+.TP
+.BR "context " \fI<name>\fR
+Extract the full source code of a symbol's definition by reading the
+original file. If multiple definitions match, all are printed separated
+by a blank line.
+
+.RS
+.B Output format (default):
+.RS
+# path:startLine-endLine
+<source lines>
+.RE
+
+.B Options:
+.RS
+.TP
+.BI \-\-kind " kind"
+Disambiguate by symbol kind.
+.TP
+.BI \-\-lang " lang"
+Disambiguate by language.
+.TP
+.B \-\-json
+Output as NDJSON with a \fIsource\fR field containing the code inline.
+.RE
+.RE
+
+.TP
+.B stats
+Print a summary of the indexed database: file count by language,
+symbol count by kind, reference count, database size, and last indexed
+timestamp.
+
+.TP
+.B list-files
+List all indexed files, one per line.
+
+.RS
+.B Output format:
+.RS
+language TAB path
+.RE
+
+.B Options:
+.RS
+.TP
+.BI \-\-lang " lang"
+Filter by language.
+.TP
+.B \-\-json
+Output as NDJSON.
+.RE
+.RE
+
+.TP
+.B list-symbols
+List all symbols in the index, one per line.
+
+.RS
+.B Output format:
+.RS
+kind TAB name TAB path TAB startLine-endLine
+.RE
+
+.B Options:
+.RS
+.TP
+.BI \-\-file " path"
+Filter to symbols defined in a specific file. Recommended on large repos.
+.TP
+.BI \-\-kind " kind"
+Filter by symbol kind.
+.TP
+.B \-\-json
+Output as NDJSON.
+.RE
+.RE
+
+.SH OPTIONS
+
+.TP
+.BI \-\-db " path"
+Path to the SQLite database. Applies to all commands. Default: ./code-indexer.db
+
+.TP
+.B \-\-json
+Output data as newline-delimited JSON (NDJSON). Each line is a valid,
+independently parseable JSON object. Not a JSON array. Applies to all
+query commands.
+
+.TP
+.B \-\-help
+Print usage summary and exit.
+
+.TP
+.B \-\-llm
+Print the extended LLM usage guide to stdout and exit. Works as a standalone
+flag (\fBcode-indexer --llm\fR) or combined with the help command
+(\fBcode-indexer help --llm\fR). Covers recommended workflows, token cost
+guidelines, and usage patterns optimized for language model consumption.
+
+.SH OUTPUT CONVENTIONS
+
+Data is always written to
+.B stdout.
+Progress messages, warnings, and errors are always written to
+.B stderr.
+These streams are never mixed.
+
+Default output is tab-delimited text, one record per line. This makes
+output composable with standard Unix tools:
+
+.RS
+.nf
+# Count how many files reference a symbol
+code-indexer find-refs MyClass | cut -f1 | sort -u | wc -l
+
+# Find the most-referenced symbols
+code-indexer list-symbols | while IFS=$'\\t' read kind name path lines; do
+  count=$(code-indexer find-refs "$name" | wc -l)
+  printf "%s\\t%s\\t%s\\n" "$count" "$kind" "$name"
+done | sort -rn | head -10
+
+# Get all class definitions as JSON
+code-indexer list-symbols --kind class --json
+.fi
+.RE
+
+Exit code is 0 on success (including empty results), 1 on error.
+Empty results are not an error.
+
+.SH LANGUAGES
+
+.TP
+.B TypeScript / TSX
+Extensions: .ts, .tsx
+Extracted kinds: function, class, interface, method, type, enum, variable
+.br
+Note: \fBvariable\fR captures only module-level and class-level
+.BR const / let
+declarations. Local variables inside function bodies are not indexed.
+
+.TP
+.B Kotlin / KTS
+Extensions: .kt, .kts
+Extracted kinds: function, class, object, property
+.br
+Note: \fBproperty\fR captures only file-level and class/object-level
+declarations. Local vals inside function bodies are not indexed.
+
+.SH FILES
+
+.TP
+.I ./code-indexer.db
+Default SQLite database. Created automatically on first index run.
+
+.SH NOTES
+
+.B find-symbol
+uses exact name matching. To find symbols when you do not know the exact
+name, use grep as a fuzzy search layer:
+.RS
+.nf
+code-indexer list-symbols | grep -i keyword
+code-indexer list-symbols --kind class | grep -i auth
+.fi
+.RE
+then
+.B context\ <name>
+to retrieve the source.
+
+TypeScript
+.BR namespace\ Foo\ {}
+declarations are not indexed.
+
+.B list-symbols
+without
+.B --file
+or
+.B --kind
+can return thousands of lines on large repos. Always filter.
+
+References extracted by
+.B find-refs
+are structural (AST-based) and do not include occurrences in comments
+or string literals. This is intentional: the results represent actual
+code references, not textual occurrences.
+
+.SH EXAMPLES
+
+Index a project:
+.RS
+.nf
+code-indexer index ./my-project
+code-indexer index ./my-project --db ./my-project.db
+.fi
+.RE
+
+Find a class definition:
+.RS
+.nf
+code-indexer find-symbol UserService
+code-indexer find-symbol UserService --kind class --lang typescript
+.fi
+.RE
+
+Read the source of a symbol:
+.RS
+.nf
+code-indexer context UserService
+code-indexer context UserService --lang kotlin --json
+.fi
+.RE
+
+Explore an unfamiliar file:
+.RS
+.nf
+code-indexer list-symbols --file src/services/authService.ts
+.fi
+.RE
+
+Find all usages of a function:
+.RS
+.nf
+code-indexer find-refs parseUser
+code-indexer find-refs parseUser | cut -f1 | sort -u
+.fi
+.RE
+
+LLM usage guide:
+.RS
+.nf
+code-indexer help --llm
+.fi
+.RE
+
+.SH SEE ALSO
+.BR grep (1),
+.BR sqlite3 (1),
+.BR jq (1)
+
+.SH AUTHOR
+code-indexer was built as an MVP for token-efficient LLM code navigation.
