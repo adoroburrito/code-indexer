@@ -1,26 +1,24 @@
 # code-indexer
 
-> Parse TypeScript and Kotlin into a SQLite index. Query symbols, read source snippets, trace references — without reading entire files.
+Your LLM doesn't need the whole file. It needs the function.
 
-Built for LLM agents and developers who need to navigate large codebases efficiently.
+`code-indexer` indexes TypeScript and Kotlin into SQLite so you can query exactly what you need — symbol source, definition location, references — without dumping entire files into context.
 
 ---
 
-## The problem
+## Why this exists
 
-When an LLM (or a developer) needs to understand a function in a large codebase, the naive approach is to read the whole file. That's expensive — often 2,000–10,000 tokens for context you mostly don't need.
+The naive approach to LLM code navigation: read the whole file. It works. It's also 4,847 tokens for a function that's 30 lines long.
 
-`code-indexer` gives you surgical access: ask for exactly the symbol you need and get back just its source, its location, and who references it.
-
-**Measured on [colinhacks/zod](https://github.com/colinhacks/zod) (389 files):**
+**Measured on [colinhacks/zod](https://github.com/colinhacks/zod) — 389 files, real production library:**
 
 | Approach | Median tokens | Recall |
 |---|---|---|
-| Full file read | 4,847 | 100% |
+| Full file | 4,847 | 100% |
 | grep ±10 lines | 412 | 100% |
 | **code-indexer** | **130** | **100%** |
 
-LLM quality test (Claude Haiku, 10 questions): code-indexer scored **3.29/4** vs full-file **3.00/4** — using **82% fewer tokens**. Smaller context, better answers.
+LLM quality didn't suffer — it got better. Claude Haiku scored **3.29/4** with code-indexer vs **3.00/4** with full-file context. Turns out less noise is better than more noise.
 
 ---
 
@@ -40,22 +38,22 @@ npm link   # makes `code-indexer` available globally
 ## Quick start
 
 ```bash
-# Index a project
+# build the index (~2s on a medium-sized repo)
 code-indexer index ./my-project
 
-# What's in the index?
+# get the lay of the land
 code-indexer stats
 
-# Find a symbol
+# find a symbol
 code-indexer find-symbol UserService
 
-# Read its source
+# read just its source — not the whole file it lives in
 code-indexer context UserService
 
-# Find everything that references it
+# find everything that depends on it before you touch it
 code-indexer find-refs UserService
 
-# Explore a file
+# what's even in this file?
 code-indexer list-symbols --file src/services/authService.ts
 ```
 
@@ -65,52 +63,54 @@ code-indexer list-symbols --file src/services/authService.ts
 
 | Command | What it does |
 |---|---|
-| `index <dir>` | Index all TS/Kotlin files under `dir` (incremental, SHA-256 hashed) |
+| `index <dir>` | Index all TS/Kotlin files (incremental, SHA-256 hashed) |
 | `find-symbol <name>` | Find where a symbol is defined |
 | `context <name>` | Extract the full source of a symbol |
-| `find-refs <name>` | Find all references to a symbol (AST-based, excludes comments/strings) |
-| `list-symbols` | List indexed symbols, filterable by `--file` or `--kind` |
+| `find-refs <name>` | All references to a symbol (AST-based, not grep — no false positives from comments) |
+| `list-symbols` | List indexed symbols, filter by `--file` or `--kind` |
 | `list-files` | List all indexed files |
-| `stats` | Summary of the index (file count, symbol count, db size) |
+| `stats` | Index summary: file count, symbol count, db size |
 
-Global flags: `--db <path>`, `--json` (NDJSON output), `--llm` (LLM usage guide).
+Global flags: `--db <path>`, `--json` (NDJSON), `--llm` (LLM usage guide).
 
-Full command reference → [wiki](../../wiki)
+Full reference → [wiki](../../wiki)
 
 ---
 
-## Works great with LLMs
+## Built for LLM agents
 
-Any agent can self-discover how to use the tool:
+The tool can explain itself to an agent without any external docs:
 
 ```bash
-code-indexer --llm   # prints a full usage guide optimized for LLM agents
+code-indexer --llm
 ```
+
+Prints a full usage guide to stdout — workflows, token cost estimates, navigation patterns. An agent that has never seen this tool can figure out exactly how to use it from that output alone.
 
 Recommended workflow for navigating an unfamiliar codebase:
 
 ```bash
-code-indexer stats                                # 1. confirm index is ready
-code-indexer list-files | grep "area/of/interest" # 2. find relevant files
-code-indexer list-symbols --file src/foo.ts       # 3. enumerate symbols
-code-indexer context SomeSymbol                   # 4. read what you need
-code-indexer find-refs SomeSymbol                 # 5. trace who uses it
+code-indexer stats                                 # is the index ready?
+code-indexer list-files | grep "area/of/interest"  # where do I even start?
+code-indexer list-symbols --file src/foo.ts        # what's in here?
+code-indexer context SomeSymbol                    # show me the thing
+code-indexer find-refs SomeSymbol                  # who's going to break if I change it?
 ```
 
 ---
 
-## Unix-composable output
+## Unix-composable
 
-Data to stdout, errors to stderr, tab-delimited by default, `--json` for NDJSON.
+Data to stdout, errors to stderr, tab-delimited by default, `--json` for NDJSON. Works with everything.
 
 ```bash
-# blast-radius check before a refactor
-code-indexer find-refs UserService | cut -f1 | sort -u
+# how many files actually depend on this?
+code-indexer find-refs UserService | cut -f1 | sort -u | wc -l
 
-# fuzzy symbol search
+# fuzzy search (because exact-match-only is a known limitation and grep exists)
 code-indexer list-symbols | grep -i "error\|handler"
 
-# pipe into jq
+# feed into jq
 code-indexer list-symbols --kind interface --json | jq '.name'
 ```
 
@@ -122,26 +122,21 @@ code-indexer list-symbols --kind interface --json | jq '.name'
 source files → tree-sitter AST → symbol + reference extraction → SQLite
 ```
 
-- **Symbols**: extracted by AST node type (`function_declaration`, `class_declaration`, etc.)
-- **References**: every identifier leaf not part of a definition — comments and strings excluded by construction
-- **Incremental**: SHA-256 per file, re-index skips unchanged files
-- **Storage**: single SQLite file, 3 tables, 5 indexes, WAL mode
+- **Symbols** extracted by AST node type — no regex, no heuristics
+- **References** are every identifier leaf not part of a definition; comments and strings excluded by construction
+- **Incremental indexing** via SHA-256 per file — re-running skips unchanged files
+- **Single SQLite file**, 3 tables, 5 indexes, WAL mode
 
 ---
 
 ## Supported languages
 
-| Language | Extensions |
-|---|---|
-| TypeScript | `.ts`, `.tsx` |
-| Kotlin | `.kt`, `.kts` |
+TypeScript (`.ts`, `.tsx`) and Kotlin (`.kt`, `.kts`). Adding a language means writing a config object and plugging in a tree-sitter grammar — [see the wiki](../../wiki/Development).
 
 ---
 
 ## See also
 
-- [Wiki](../../wiki) — full command reference, LLM integration guide, internals, limitations
-- [`tree-sitter`](https://tree-sitter.github.io/) — AST parser powering symbol extraction
-- [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) — SQLite bindings
-- `code-indexer --llm` — LLM-oriented usage guide (built-in)
-- `man code-indexer` — man page
+- [Wiki](../../wiki) — full command reference, LLM integration guide, internals, known limitations
+- `code-indexer --llm` — built-in LLM usage guide
+- `man code-indexer` — man page, if you're into that
