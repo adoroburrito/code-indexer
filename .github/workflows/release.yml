@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.1.0)'
+        required: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: code-indexer-linux-x64
+          - os: macos-13
+            artifact: code-indexer-macos-x64
+          - os: macos-latest
+            artifact: code-indexer-macos-arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies and build
+        run: |
+          npm ci
+          npm run build
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+      - name: Bundle into single executable
+        run: npx caxa --input . --output ${{ matrix.artifact }} -- node "{{caxa}}/dist/index.js"
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          files: ${{ matrix.artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

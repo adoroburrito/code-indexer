@@ -28,13 +28,20 @@ Same recall. 97% fewer tokens. And LLM quality went up — Claude Haiku scored *
 
 ## Install
 
-Requires Node.js 20.
+```bash
+curl -fsSL https://raw.githubusercontent.com/adoroburrito/code-indexer/main/install.sh | bash
+```
 
+Works on Linux (x64) and macOS (x64 + Apple Silicon). No Node.js required.
+
+Prebuilt binaries on the [Releases page](https://github.com/adoroburrito/code-indexer/releases) if you prefer to download directly.
+
+**Build from source** (requires Node.js 20):
 ```bash
 git clone https://github.com/adoroburrito/code-indexer
 cd code-indexer
 npm install && npm run build
-npm link   # makes `code-indexer` available globally
+npm link
 ```
 
 ---
