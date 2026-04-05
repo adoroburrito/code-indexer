@@ -9,6 +9,7 @@ ARCH=$(uname -m)
 
 case "$OS-$ARCH" in
   linux-x86_64)  BINARY="code-indexer-linux-x64" ;;
+  linux-aarch64) BINARY="code-indexer-linux-arm64" ;;
   darwin-x86_64) BINARY="code-indexer-macos-x64" ;;
   darwin-arm64)  BINARY="code-indexer-macos-arm64" ;;
   *)

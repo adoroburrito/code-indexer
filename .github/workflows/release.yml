@@ -18,6 +18,8 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: code-indexer-linux-x64
+          - os: ubuntu-24.04-arm
+            artifact: code-indexer-linux-arm64
           - os: macos-latest
             artifact: code-indexer-macos-arm64
 
