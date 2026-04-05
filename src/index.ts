@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { spawnSync } from 'child_process';

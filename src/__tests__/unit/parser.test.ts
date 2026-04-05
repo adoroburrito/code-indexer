@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll } from 'bun:test';
 import { parseSource } from '../../parser.js';
 import { typescriptConfig } from '../../languages/typescript.js';
 import { kotlinConfig } from '../../languages/kotlin.js';
