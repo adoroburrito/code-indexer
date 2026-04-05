@@ -10,17 +10,19 @@ Your LLM doesn't need the whole file. It needs the function.
 
 ## Why this exists
 
-The naive approach to LLM code navigation: read the whole file. It works. It's also 4,847 tokens for a function that's 30 lines long.
+You ask an LLM to trace a bug through a TypeScript codebase. It reads `userService.ts` — 4,847 tokens. Not there. Reads `authMiddleware.ts` — another 3,200 tokens. Keeps going. By the time it finds the right function it's burned 20k tokens on navigation, and you're halfway through your context window before the actual work starts.
+
+The function it needed was 30 lines long.
 
 **Measured on [colinhacks/zod](https://github.com/colinhacks/zod) — 389 files, real production library:**
 
-| Approach | Median tokens | Recall |
+| Approach | Median tokens to retrieve a symbol | Recall |
 |---|---|---|
-| Full file | 4,847 | 100% |
+| Read full file | 4,847 | 100% |
 | grep ±10 lines | 412 | 100% |
 | **code-indexer** | **130** | **100%** |
 
-LLM quality didn't suffer — it got better. Claude Haiku scored **3.29/4** with code-indexer vs **3.00/4** with full-file context. Turns out less noise is better than more noise.
+Same recall. 97% fewer tokens. And LLM quality went up — Claude Haiku scored **3.29/4** with code-indexer vs **3.00/4** reading full files. Less noise gives the model less to get confused by.
 
 ---
 

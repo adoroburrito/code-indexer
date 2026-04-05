@@ -215,6 +215,26 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// ── Color helpers (no-op when not a TTY or when piped) ─────────────────────
+const outTTY = process.stdout.isTTY ?? false;
+const errTTY = process.stderr.isTTY ?? false;
+const co = {
+  bold:   (s: string) => outTTY ? `\x1b[1m${s}\x1b[0m` : s,
+  dim:    (s: string) => outTTY ? `\x1b[2m${s}\x1b[0m` : s,
+  green:  (s: string) => outTTY ? `\x1b[32m${s}\x1b[0m` : s,
+  cyan:   (s: string) => outTTY ? `\x1b[36m${s}\x1b[0m` : s,
+  yellow: (s: string) => outTTY ? `\x1b[33m${s}\x1b[0m` : s,
+  magenta:(s: string) => outTTY ? `\x1b[35m${s}\x1b[0m` : s,
+};
+const ce = {
+  bold:   (s: string) => errTTY ? `\x1b[1m${s}\x1b[0m` : s,
+  dim:    (s: string) => errTTY ? `\x1b[2m${s}\x1b[0m` : s,
+  green:  (s: string) => errTTY ? `\x1b[32m${s}\x1b[0m` : s,
+  yellow: (s: string) => errTTY ? `\x1b[33m${s}\x1b[0m` : s,
+  cyan:   (s: string) => errTTY ? `\x1b[36m${s}\x1b[0m` : s,
+  red:    (s: string) => errTTY ? `\x1b[31m${s}\x1b[0m` : s,
+};
+
 function printSymbol(row: { kind: string; name: string; path: string; start_line: number; end_line: number }, json: boolean): void {
   if (json) {
     process.stdout.write(JSON.stringify({
@@ -225,7 +245,11 @@ function printSymbol(row: { kind: string; name: string; path: string; start_line
       endLine: row.end_line,
     }) + '\n');
   } else {
-    process.stdout.write(`${row.kind}\t${row.name}\t${row.path}\t${row.start_line}-${row.end_line}\n`);
+    const kind  = co.cyan(row.kind);
+    const name  = co.bold(co.green(row.name));
+    const path  = co.dim(row.path);
+    const lines = co.dim(`${row.start_line}-${row.end_line}`);
+    process.stdout.write(`${kind}\t${name}\t${path}\t${lines}\n`);
   }
 }
 
@@ -265,12 +289,12 @@ async function main(): Promise<void> {
       let iteration = 0;
       while (true) {
         iteration++;
-        process.stderr.write(`[pass ${iteration}] indexing...\n`);
+        process.stderr.write(`${ce.dim(`[pass ${iteration}]`)} indexing...\n`);
         const result = spawnSync(process.execPath, [process.argv[1], ...selfArgs], { stdio: 'inherit' });
         if (result.status === 0) break;
         if (result.status !== 2) process.exit(result.status ?? 1);
       }
-      process.stderr.write(`done in ${iteration} pass${iteration === 1 ? '' : 'es'}\n`);
+      process.stderr.write(`${ce.green('done')} in ${iteration} pass${iteration === 1 ? '' : 'es'}\n`);
       process.exit(0);
     }
 
@@ -292,12 +316,12 @@ async function main(): Promise<void> {
     db.close();
 
     const langSummary = Object.entries(result.byLanguage).map(([l, c]) => `${c} ${l}`).join(', ');
-    const skippedNote = result.skipped > 0 ? ` (${result.skipped} unchanged)` : '';
-    const prunedNote = result.pruned > 0 ? `, ${result.pruned} pruned` : '';
-    const tooBigNote = result.skippedTooBig > 0 ? `, ${result.skippedTooBig} skipped (too large)` : '';
+    const skippedNote = result.skipped > 0 ? ce.dim(` (${result.skipped} unchanged)`) : '';
+    const prunedNote = result.pruned > 0 ? ce.dim(`, ${result.pruned} pruned`) : '';
+    const tooBigNote = result.skippedTooBig > 0 ? ce.yellow(`, ${result.skippedTooBig} skipped (too large)`) : '';
     const fileWord = result.indexed === 1 ? 'file' : 'files';
     process.stderr.write(
-      `indexed ${result.indexed} ${fileWord}${langSummary ? ` (${langSummary})` : ''} — ${result.totalSymbols} symbols, ${result.totalRefs} references${skippedNote}${prunedNote}${tooBigNote}\n`
+      `${ce.green('indexed')} ${ce.bold(String(result.indexed))} ${fileWord}${langSummary ? ce.dim(` (${langSummary})`) : ''} — ${ce.bold(String(result.totalSymbols))} symbols, ${ce.bold(String(result.totalRefs))} references${skippedNote}${prunedNote}${tooBigNote}\n`
     );
     if (result.abortedMemoryLimit) {
       process.exit(2); // distinct exit code so scripts can detect partial index
@@ -330,7 +354,7 @@ async function main(): Promise<void> {
       if (useJson) {
         process.stdout.write(JSON.stringify({ path: row.path, line: row.line, column: row.col }) + '\n');
       } else {
-        process.stdout.write(`${row.path}\t${row.line}\t${row.col}\n`);
+        process.stdout.write(`${co.cyan(row.path)}\t${co.dim(String(row.line))}\t${co.dim(String(row.col))}\n`);
       }
     }
     process.exit(0);
@@ -378,7 +402,7 @@ async function main(): Promise<void> {
         }) + '\n');
       } else {
         if (!first) process.stdout.write('\n');
-        process.stdout.write(`# ${row.path}:${row.start_line}-${row.end_line}\n`);
+        process.stdout.write(`${co.cyan(co.bold(`# ${row.path}`))}${co.dim(`:${row.start_line}-${row.end_line}`)}\n`);
         process.stdout.write(snippet + '\n');
         first = false;
       }
@@ -397,11 +421,11 @@ async function main(): Promise<void> {
     if (useJson) {
       process.stdout.write(JSON.stringify(stats) + '\n');
     } else {
-      process.stdout.write(`files:      ${stats.fileCount}${langStr ? ` (${langStr})` : ''}\n`);
-      process.stdout.write(`symbols:    ${stats.symbolCount}${kindStr ? ` (${kindStr})` : ''}\n`);
-      process.stdout.write(`references: ${stats.refCount}\n`);
-      process.stdout.write(`db size:    ${formatSize(stats.dbSize)}\n`);
-      process.stdout.write(`last indexed: ${stats.lastIndexed ?? 'never'}\n`);
+      process.stdout.write(`${co.dim('files:')}      ${co.bold(co.green(String(stats.fileCount)))}${langStr ? co.dim(` (${langStr})`) : ''}\n`);
+      process.stdout.write(`${co.dim('symbols:')}    ${co.bold(co.green(String(stats.symbolCount)))}${kindStr ? co.dim(` (${kindStr})`) : ''}\n`);
+      process.stdout.write(`${co.dim('references:')} ${co.bold(co.green(String(stats.refCount)))}\n`);
+      process.stdout.write(`${co.dim('db size:')}    ${formatSize(stats.dbSize)}\n`);
+      process.stdout.write(`${co.dim('last indexed:')} ${co.dim(stats.lastIndexed ?? 'never')}\n`);
     }
     process.exit(0);
   }
