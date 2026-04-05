@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import { openDb, upsertFile, getFileHash, querySymbols, queryRefs, listFiles, listSymbols, getSymbolContext, findFilesThatReference, getStats } from '../../db.js';
-import type { Database as DB } from 'better-sqlite3';
+import type { Database } from 'bun:sqlite';
 
-let db: DB;
+let db: Database;
 
 beforeEach(() => {
   db = openDb(':memory:');

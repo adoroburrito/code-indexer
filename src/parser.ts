@@ -1,6 +1,31 @@
 import Parser from 'tree-sitter';
 import type { LanguageConfig, ExtractedSymbol, ExtractedReference } from './languages/types.js';
 
+// tree-sitter's initializeLanguageNodeClasses does `nodeSubclass.prototype.type = typeName`.
+// In strict mode (ESM / Bun --compile), this throws because SyntaxNode.prototype has a
+// getter-only `type` and assigning to an inherited getter-only property is illegal in
+// strict mode. Fix: add a setter that creates an own data property on the prototype,
+// allowing the assignment to succeed and shadow the inherited getter on the subclass.
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const SyntaxNode = (Parser as any).SyntaxNode;
+  if (SyntaxNode?.prototype) {
+    const desc = Object.getOwnPropertyDescriptor(SyntaxNode.prototype, 'type');
+    if (desc?.get && !desc.set) {
+      Object.defineProperty(SyntaxNode.prototype, 'type', {
+        get: desc.get,
+        set(value: unknown) {
+          // `this` here is the subclass prototype (e.g. ClassDeclarationNode.prototype).
+          // Create an own data property so the subclass' .type returns the static string.
+          Object.defineProperty(this, 'type', { value, writable: true, enumerable: false, configurable: true });
+        },
+        enumerable: desc.enumerable ?? false,
+        configurable: true,
+      });
+    }
+  }
+}
+
 export interface ParseResult {
   symbols: ExtractedSymbol[];
   references: ExtractedReference[];

@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { tmpdir } from 'os';
 
-const CLI = resolve(process.cwd(), 'dist/index.js');
+const BUN = process.execPath;
+const CLI = resolve(process.cwd(), 'src/index.ts');
 const FIXTURES = resolve(process.cwd(), 'fixtures');
 
 function run(args: string[], dbPath: string): { stdout: string; stderr: string; exitCode: number } {
-  const result = spawnSync(process.execPath, [CLI, ...args, '--db', dbPath], {
+  const result = spawnSync(BUN, [CLI, ...args, '--db', dbPath], {
     encoding: 'utf-8',
   });
   return {
@@ -261,14 +262,14 @@ describe('E2E: index command', () => {
   });
 
   it('help --llm prints LLM guide to stdout and exits 0', () => {
-    const r = spawnSync(process.execPath, [CLI, 'help', '--llm'], { encoding: 'utf-8' });
+    const r = spawnSync(BUN, [CLI, 'help', '--llm'], { encoding: 'utf-8' });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('LLM Usage Guide');
     expect(r.stderr.trim()).toBe('');
   });
 
   it('--llm as standalone flag also prints LLM guide to stdout', () => {
-    const r = spawnSync(process.execPath, [CLI, '--llm'], { encoding: 'utf-8' });
+    const r = spawnSync(BUN, [CLI, '--llm'], { encoding: 'utf-8' });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('LLM Usage Guide');
     expect(r.stderr.trim()).toBe('');

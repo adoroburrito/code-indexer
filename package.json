@@ -4,16 +4,19 @@
   "description": "Language-agnostic code indexer with Tree-sitter + SQLite",
   "type": "module",
   "bin": {
-    "code-indexer": "./dist/index.js"
+    "code-indexer": "./dist/code-indexer"
   },
-  "main": "./dist/index.js",
   "scripts": {
-    "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "build": "bun build --compile --minify-syntax --minify-whitespace ./src/index.ts --outfile ./dist/code-indexer",
+    "build:linux-x64": "bun build --compile --minify-syntax --minify-whitespace --target=bun-linux-x64 ./src/index.ts --outfile ./dist/code-indexer-linux-x64",
+    "build:linux-arm64": "bun build --compile --minify-syntax --minify-whitespace --target=bun-linux-arm64 ./src/index.ts --outfile ./dist/code-indexer-linux-arm64",
+    "build:darwin-x64": "bun build --compile --minify-syntax --minify-whitespace --target=bun-darwin-x64 ./src/index.ts --outfile ./dist/code-indexer-darwin-x64",
+    "build:darwin-arm64": "bun build --compile --minify-syntax --minify-whitespace --target=bun-darwin-arm64 ./src/index.ts --outfile ./dist/code-indexer-darwin-arm64",
+    "build:windows-x64": "bun build --compile --minify-syntax --minify-whitespace --target=bun-windows-x64 ./src/index.ts --outfile ./dist/code-indexer-windows-x64.exe",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0",
     "tree-sitter": "^0.22.4",
     "tree-sitter-c": "^0.21.4",
     "tree-sitter-kotlin": "^0.3.1",
@@ -24,10 +27,13 @@
     "tree-sitter": "^0.22.4"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.0.0",
-    "@vitest/coverage-v8": "^1.6.0",
-    "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
-  }
+    "bun-types": "latest",
+    "typescript": "^5.4.5"
+  },
+  "trustedDependencies": [
+    "tree-sitter-c",
+    "tree-sitter-javascript",
+    "tree-sitter-rust"
+  ]
 }

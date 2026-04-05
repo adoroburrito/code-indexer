@@ -1,25 +1,24 @@
-import Database from 'better-sqlite3';
-import type { Database as DB } from 'better-sqlite3';
+import { Database } from 'bun:sqlite';
 import { statSync } from 'fs';
 import type { ExtractedSymbol, ExtractedReference } from './languages/types.js';
 
-export function openDb(dbPath: string): DB {
+export function openDb(dbPath: string): Database {
   const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA foreign_keys = ON');
   initSchema(db);
   return db;
 }
 
 // Call this before bulk indexing. Trades durability for speed — safe because
 // the index can always be rebuilt from source.
-export function setIndexingPragmas(db: DB): void {
-  db.pragma('synchronous = OFF');    // no fsync on WAL commits
-  db.pragma('cache_size = -4096');   // 4 MB page cache (default is 8 MB)
-  db.pragma('temp_store = MEMORY');  // temp tables in memory, not disk
+export function setIndexingPragmas(db: Database): void {
+  db.exec('PRAGMA synchronous = OFF');
+  db.exec('PRAGMA cache_size = -4096');
+  db.exec('PRAGMA temp_store = MEMORY');
 }
 
-function initSchema(db: DB): void {
+function initSchema(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS files (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,28 +68,28 @@ function initSchema(db: DB): void {
   }
 }
 
-export function getMeta(db: DB, key: string): string | null {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+export function getMeta(db: Database, key: string): string | null {
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | null;
   return row ? row.value : null;
 }
 
-export function setMeta(db: DB, key: string, value: string): void {
+export function setMeta(db: Database, key: string, value: string): void {
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
 }
 
-export function getFileHash(db: DB, filePath: string): string | null {
-  const row = db.prepare('SELECT hash FROM files WHERE path = ?').get(filePath) as { hash: string } | undefined;
+export function getFileHash(db: Database, filePath: string): string | null {
+  const row = db.prepare('SELECT hash FROM files WHERE path = ?').get(filePath) as { hash: string } | null;
   return row ? row.hash : null;
 }
 
-export function getFileMtimes(db: DB): Map<string, number> {
+export function getFileMtimes(db: Database): Map<string, number> {
   const rows = db.prepare('SELECT path, mtime FROM files WHERE mtime IS NOT NULL').all() as { path: string; mtime: number }[];
   const map = new Map<string, number>();
   for (const row of rows) map.set(row.path, row.mtime);
   return map;
 }
 
-export function updateFileMtime(db: DB, filePath: string, mtime: number): void {
+export function updateFileMtime(db: Database, filePath: string, mtime: number): void {
   db.prepare('UPDATE files SET mtime = ? WHERE path = ?').run(mtime, filePath);
 }
 
@@ -106,7 +105,7 @@ export interface FileUpsert {
 
 // Single-file upsert (used by indexFile, kept for backwards compatibility).
 export function upsertFile(
-  db: DB,
+  db: Database,
   filePath: string,
   absPath: string,
   language: string,
@@ -120,7 +119,7 @@ export function upsertFile(
 
 // Batch upsert: wraps N files in a single transaction.
 // Dramatically faster than N individual transactions for large repos.
-export function upsertFileBatch(db: DB, files: FileUpsert[]): void {
+export function upsertFileBatch(db: Database, files: FileUpsert[]): void {
   if (files.length === 0) return;
   const delStmt   = db.prepare('DELETE FROM files WHERE path = ?');
   const insFile   = db.prepare("INSERT INTO files (path, abs_path, language, hash, mtime, indexed_at) VALUES (?, ?, ?, ?, ?, datetime('now'))");
@@ -132,12 +131,12 @@ export function upsertFileBatch(db: DB, files: FileUpsert[]): void {
       delStmt.run(f.filePath);
       const fileResult = insFile.run(f.filePath, f.absPath, f.language, f.hash, f.mtime);
       const fileId = fileResult.lastInsertRowid;
-      const localIdMap = new Map<number, bigint>();
+      const localIdMap = new Map<number, number>();
       for (let i = 0; i < f.symbols.length; i++) {
         const s = f.symbols[i];
         const parentDbId = s.parentSymbolId != null ? (localIdMap.get(s.parentSymbolId) ?? null) : null;
         const r = insSymbol.run(fileId, s.name, s.kind, s.startLine, s.endLine, parentDbId);
-        localIdMap.set(i, r.lastInsertRowid as bigint);
+        localIdMap.set(i, r.lastInsertRowid as number);
       }
       for (const r of f.references) {
         insRef.run(fileId, r.symbolName, r.line, r.column);
@@ -146,7 +145,7 @@ export function upsertFileBatch(db: DB, files: FileUpsert[]): void {
   })();
 }
 
-export function deleteFile(db: DB, filePath: string): boolean {
+export function deleteFile(db: Database, filePath: string): boolean {
   const result = db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
   return result.changes > 0;
 }
@@ -178,7 +177,7 @@ export interface FileRow {
 }
 
 export function querySymbols(
-  db: DB,
+  db: Database,
   name: string,
   kind?: string,
   lang?: string
@@ -191,10 +190,11 @@ export function querySymbols(
   const params: unknown[] = [name];
   if (kind) { sql += ' AND s.kind = ?'; params.push(kind); }
   if (lang) { sql += ' AND f.language = ?'; params.push(lang); }
-  return db.prepare(sql).all(...params) as SymbolRow[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return db.prepare(sql).all(...(params as any[])) as SymbolRow[];
 }
 
-export function queryRefs(db: DB, name: string, lang?: string): RefRow[] {
+export function queryRefs(db: Database, name: string, lang?: string): RefRow[] {
   let sql = `
     SELECT f.path, r.line, r.col
     FROM refs r JOIN files f ON f.id = r.file_id
@@ -203,18 +203,20 @@ export function queryRefs(db: DB, name: string, lang?: string): RefRow[] {
   const params: unknown[] = [name];
   if (lang) { sql += ' AND f.language = ?'; params.push(lang); }
   sql += ' ORDER BY f.path, r.line, r.col';
-  return db.prepare(sql).all(...params) as RefRow[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return db.prepare(sql).all(...(params as any[])) as RefRow[];
 }
 
-export function listFiles(db: DB, lang?: string): FileRow[] {
+export function listFiles(db: Database, lang?: string): FileRow[] {
   let sql = 'SELECT id, path, language, hash, indexed_at FROM files';
   const params: unknown[] = [];
   if (lang) { sql += ' WHERE language = ?'; params.push(lang); }
   sql += ' ORDER BY path';
-  return db.prepare(sql).all(...params) as FileRow[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return db.prepare(sql).all(...(params as any[])) as FileRow[];
 }
 
-export function listSymbols(db: DB, file?: string, kind?: string): SymbolRow[] {
+export function listSymbols(db: Database, file?: string, kind?: string): SymbolRow[] {
   let sql = `
     SELECT s.id, s.file_id, s.name, s.kind, s.start_line, s.end_line, f.path, f.abs_path, f.language
     FROM symbols s JOIN files f ON f.id = s.file_id
@@ -224,7 +226,8 @@ export function listSymbols(db: DB, file?: string, kind?: string): SymbolRow[] {
   if (file) { sql += ' AND f.path = ?'; params.push(file); }
   if (kind) { sql += ' AND s.kind = ?'; params.push(kind); }
   sql += ' ORDER BY f.path, s.start_line';
-  return db.prepare(sql).all(...params) as SymbolRow[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return db.prepare(sql).all(...(params as any[])) as SymbolRow[];
 }
 
 export interface StatsResult {
@@ -237,7 +240,7 @@ export interface StatsResult {
   lastIndexed: string | null;
 }
 
-export function getStats(db: DB, dbPath: string): StatsResult {
+export function getStats(db: Database, dbPath: string): StatsResult {
   const files = db.prepare('SELECT language, COUNT(*) as cnt FROM files GROUP BY language').all() as { language: string; cnt: number }[];
   const kinds = db.prepare('SELECT kind, COUNT(*) as cnt FROM symbols GROUP BY kind').all() as { kind: string; cnt: number }[];
   const refCount = (db.prepare('SELECT COUNT(*) as cnt FROM refs').get() as { cnt: number }).cnt;
@@ -257,7 +260,7 @@ export function getStats(db: DB, dbPath: string): StatsResult {
   return { fileCount, byLanguage, symbolCount, byKind, refCount, dbSize, lastIndexed };
 }
 
-export function getSymbolContext(db: DB, symbolName: string): { definitions: SymbolRow[]; references: RefRow[] } {
+export function getSymbolContext(db: Database, symbolName: string): { definitions: SymbolRow[]; references: RefRow[] } {
   const definitions = db.prepare(`
     SELECT s.id, s.file_id, s.name, s.kind, s.start_line, s.end_line, f.path, f.abs_path, f.language
     FROM symbols s JOIN files f ON f.id = s.file_id
@@ -274,7 +277,7 @@ export function getSymbolContext(db: DB, symbolName: string): { definitions: Sym
   return { definitions, references };
 }
 
-export function findFilesThatReference(db: DB, symbolName: string): string[] {
+export function findFilesThatReference(db: Database, symbolName: string): string[] {
   const rows = db.prepare(`
     SELECT DISTINCT f.path FROM refs r
     JOIN files f ON f.id = r.file_id
