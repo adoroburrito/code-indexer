@@ -25,3 +25,6 @@ Thumbs.db
 # Environment
 .env
 .env.*
+
+# Demo recording artifacts (SVG is committed, raw cast is not)
+demo.cast

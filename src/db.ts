@@ -11,6 +11,14 @@ export function openDb(dbPath: string): DB {
   return db;
 }
 
+// Call this before bulk indexing. Trades durability for speed — safe because
+// the index can always be rebuilt from source.
+export function setIndexingPragmas(db: DB): void {
+  db.pragma('synchronous = OFF');    // no fsync on WAL commits
+  db.pragma('cache_size = -4096');   // 4 MB page cache (default is 8 MB)
+  db.pragma('temp_store = MEMORY');  // temp tables in memory, not disk
+}
+
 function initSchema(db: DB): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS files (
@@ -19,6 +27,7 @@ function initSchema(db: DB): void {
       abs_path TEXT NOT NULL,
       language TEXT NOT NULL,
       hash TEXT NOT NULL,
+      mtime REAL,
       indexed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -40,12 +49,33 @@ function initSchema(db: DB): void {
       col INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
     CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_id);
     CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
     CREATE INDEX IF NOT EXISTS idx_refs_name ON refs(symbol_name);
     CREATE INDEX IF NOT EXISTS idx_refs_file ON refs(file_id);
   `);
+
+  // Migrate existing DBs that lack the mtime column
+  try {
+    db.exec('ALTER TABLE files ADD COLUMN mtime REAL');
+  } catch {
+    // Column already exists — ignore
+  }
+}
+
+export function getMeta(db: DB, key: string): string | null {
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: string } | undefined;
+  return row ? row.value : null;
+}
+
+export function setMeta(db: DB, key: string, value: string): void {
+  db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(key, value);
 }
 
 export function getFileHash(db: DB, filePath: string): string | null {
@@ -53,45 +83,72 @@ export function getFileHash(db: DB, filePath: string): string | null {
   return row ? row.hash : null;
 }
 
+export function getFileMtimes(db: DB): Map<string, number> {
+  const rows = db.prepare('SELECT path, mtime FROM files WHERE mtime IS NOT NULL').all() as { path: string; mtime: number }[];
+  const map = new Map<string, number>();
+  for (const row of rows) map.set(row.path, row.mtime);
+  return map;
+}
+
+export function updateFileMtime(db: DB, filePath: string, mtime: number): void {
+  db.prepare('UPDATE files SET mtime = ? WHERE path = ?').run(mtime, filePath);
+}
+
+export interface FileUpsert {
+  filePath: string;
+  absPath: string;
+  language: string;
+  hash: string;
+  mtime: number;
+  symbols: ExtractedSymbol[];
+  references: ExtractedReference[];
+}
+
+// Single-file upsert (used by indexFile, kept for backwards compatibility).
 export function upsertFile(
   db: DB,
   filePath: string,
   absPath: string,
   language: string,
   hash: string,
+  mtime: number,
   symbols: ExtractedSymbol[],
   references: ExtractedReference[]
 ): void {
-  const upsert = db.transaction(() => {
-    db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
+  upsertFileBatch(db, [{ filePath, absPath, language, hash, mtime, symbols, references }]);
+}
 
-    const fileResult = db.prepare(
-      "INSERT INTO files (path, abs_path, language, hash, indexed_at) VALUES (?, ?, ?, ?, datetime('now'))"
-    ).run(filePath, absPath, language, hash);
-    const fileId = fileResult.lastInsertRowid;
+// Batch upsert: wraps N files in a single transaction.
+// Dramatically faster than N individual transactions for large repos.
+export function upsertFileBatch(db: DB, files: FileUpsert[]): void {
+  if (files.length === 0) return;
+  const delStmt   = db.prepare('DELETE FROM files WHERE path = ?');
+  const insFile   = db.prepare("INSERT INTO files (path, abs_path, language, hash, mtime, indexed_at) VALUES (?, ?, ?, ?, ?, datetime('now'))");
+  const insSymbol = db.prepare('INSERT INTO symbols (file_id, name, kind, start_line, end_line, parent_symbol_id) VALUES (?, ?, ?, ?, ?, ?)');
+  const insRef    = db.prepare('INSERT INTO refs (file_id, symbol_name, line, col) VALUES (?, ?, ?, ?)');
 
-    const insertSymbol = db.prepare(
-      'INSERT INTO symbols (file_id, name, kind, start_line, end_line, parent_symbol_id) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-
-    const insertRef = db.prepare(
-      'INSERT INTO refs (file_id, symbol_name, line, col) VALUES (?, ?, ?, ?)'
-    );
-
-    const localIdMap = new Map<number, bigint>();
-    for (let i = 0; i < symbols.length; i++) {
-      const s = symbols[i];
-      const parentDbId = s.parentSymbolId != null ? (localIdMap.get(s.parentSymbolId) ?? null) : null;
-      const result = insertSymbol.run(fileId, s.name, s.kind, s.startLine, s.endLine, parentDbId);
-      localIdMap.set(i, result.lastInsertRowid as bigint);
+  db.transaction(() => {
+    for (const f of files) {
+      delStmt.run(f.filePath);
+      const fileResult = insFile.run(f.filePath, f.absPath, f.language, f.hash, f.mtime);
+      const fileId = fileResult.lastInsertRowid;
+      const localIdMap = new Map<number, bigint>();
+      for (let i = 0; i < f.symbols.length; i++) {
+        const s = f.symbols[i];
+        const parentDbId = s.parentSymbolId != null ? (localIdMap.get(s.parentSymbolId) ?? null) : null;
+        const r = insSymbol.run(fileId, s.name, s.kind, s.startLine, s.endLine, parentDbId);
+        localIdMap.set(i, r.lastInsertRowid as bigint);
+      }
+      for (const r of f.references) {
+        insRef.run(fileId, r.symbolName, r.line, r.column);
+      }
     }
+  })();
+}
 
-    for (const r of references) {
-      insertRef.run(fileId, r.symbolName, r.line, r.column);
-    }
-  });
-
-  upsert();
+export function deleteFile(db: DB, filePath: string): boolean {
+  const result = db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
+  return result.changes > 0;
 }
 
 export interface SymbolRow {

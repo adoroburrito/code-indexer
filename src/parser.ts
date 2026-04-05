@@ -32,6 +32,11 @@ export function parseSource(
   const definitionNameNodes = new Set<Parser.SyntaxNode>();
 
   function getNameNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+    // Strategy 0: language-specific custom extractor
+    if (config.nameExtractor) {
+      const result = config.nameExtractor(node);
+      if (result) return result as Parser.SyntaxNode;
+    }
     // Strategy 1: tree-sitter named field 'name'
     const named = node.childForFieldName('name');
     if (named && config.nameNodeTypes.includes(named.type)) return named;
@@ -68,6 +73,12 @@ export function parseSource(
       const constraints = config.parentConstraints?.[node.type];
       if (constraints && !constraints.includes(node.parent?.type ?? '')) {
         // Constrained node in a disallowed context (e.g. local variable) — skip symbol, walk children
+        for (let i = 0; i < node.childCount; i++) walk(node.child(i)!, parentIdx);
+        return;
+      }
+
+      if (config.filterNode && !config.filterNode(node)) {
+        // Language-specific filter rejected this node — skip symbol, walk children
         for (let i = 0; i < node.childCount; i++) walk(node.child(i)!, parentIdx);
         return;
       }

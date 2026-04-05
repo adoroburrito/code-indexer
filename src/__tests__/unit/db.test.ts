@@ -16,6 +16,7 @@ describe('DB operations', () => {
       '/abs/src/foo.ts',
       'typescript',
       'abc123',
+      0,
       [{ name: 'Foo', kind: 'class', startLine: 1, endLine: 10, parentSymbolId: null }],
       [{ symbolName: 'Bar', line: 3, column: 5 }]
     );
@@ -37,7 +38,7 @@ describe('DB operations', () => {
   });
 
   it('returns correct hash for indexed file', () => {
-    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'myhash', [], []);
+    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'myhash', 0, [], []);
     expect(getFileHash(db, 'a.ts')).toBe('myhash');
     expect(getFileHash(db, 'nonexistent.ts')).toBeNull();
   });
@@ -49,6 +50,7 @@ describe('DB operations', () => {
       '/abs/a.ts',
       'typescript',
       'hash1',
+      0,
       [{ name: 'OldClass', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null }],
       []
     );
@@ -61,6 +63,7 @@ describe('DB operations', () => {
       '/abs/a.ts',
       'typescript',
       'hash2',
+      0,
       [{ name: 'NewClass', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null }],
       []
     );
@@ -71,7 +74,7 @@ describe('DB operations', () => {
   });
 
   it('filters symbols by kind', () => {
-    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'h1', [
+    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'h1', 0, [
       { name: 'MyClass', kind: 'class', startLine: 1, endLine: 10, parentSymbolId: null },
       { name: 'myFn', kind: 'function', startLine: 12, endLine: 15, parentSymbolId: null },
     ], []);
@@ -81,10 +84,10 @@ describe('DB operations', () => {
   });
 
   it('filters symbols by file', () => {
-    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'h1', [
+    upsertFile(db, 'a.ts', '/abs/a.ts', 'typescript', 'h1', 0, [
       { name: 'A', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null },
     ], []);
-    upsertFile(db, 'b.ts', '/abs/b.ts', 'typescript', 'h2', [
+    upsertFile(db, 'b.ts', '/abs/b.ts', 'typescript', 'h2', 0, [
       { name: 'B', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null },
     ], []);
 
@@ -94,10 +97,10 @@ describe('DB operations', () => {
   });
 
   it('querySymbols filters by language', () => {
-    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', [
+    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', 0, [
       { name: 'Foo', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null },
     ], []);
-    upsertFile(db, 'a.kt', '/a.kt', 'kotlin', 'h2', [
+    upsertFile(db, 'a.kt', '/a.kt', 'kotlin', 'h2', 0, [
       { name: 'Foo', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null },
     ], []);
 
@@ -107,13 +110,13 @@ describe('DB operations', () => {
   });
 
   it('pre-built queries work against known dataset', () => {
-    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', [
+    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', 0, [
       { name: 'Foo', kind: 'class', startLine: 1, endLine: 10, parentSymbolId: null },
     ], [
       { symbolName: 'Foo', line: 5, column: 1 },
       { symbolName: 'Bar', line: 6, column: 1 },
     ]);
-    upsertFile(db, 'b.ts', '/b.ts', 'typescript', 'h2', [], [
+    upsertFile(db, 'b.ts', '/b.ts', 'typescript', 'h2', 0, [], [
       { symbolName: 'Foo', line: 3, column: 5 },
     ]);
 
@@ -127,13 +130,13 @@ describe('DB operations', () => {
   });
 
   it('getStats returns correct summary of the database', () => {
-    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', [
+    upsertFile(db, 'a.ts', '/a.ts', 'typescript', 'h1', 0, [
       { name: 'Foo', kind: 'class', startLine: 1, endLine: 5, parentSymbolId: null },
       { name: 'bar', kind: 'function', startLine: 7, endLine: 10, parentSymbolId: null },
     ], [
       { symbolName: 'Foo', line: 3, column: 1 },
     ]);
-    upsertFile(db, 'b.kt', '/b.kt', 'kotlin', 'h2', [
+    upsertFile(db, 'b.kt', '/b.kt', 'kotlin', 'h2', 0, [
       { name: 'MyClass', kind: 'class', startLine: 1, endLine: 8, parentSymbolId: null },
     ], []);
 

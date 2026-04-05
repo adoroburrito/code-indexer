@@ -2,7 +2,9 @@
 
 Your LLM doesn't need the whole file. It needs the function.
 
-`code-indexer` indexes TypeScript and Kotlin into SQLite so you can query exactly what you need — symbol source, definition location, references — without dumping entire files into context.
+`code-indexer` indexes TypeScript, Kotlin, Rust, and C into SQLite so you can query exactly what you need — symbol source, definition location, references — without dumping entire files into context.
+
+<img src="demo.svg" alt="code-indexer demo" width="100%">
 
 ---
 
@@ -63,7 +65,7 @@ code-indexer list-symbols --file src/services/authService.ts
 
 | Command | What it does |
 |---|---|
-| `index <dir>` | Index all TS/Kotlin files (incremental, SHA-256 hashed) |
+| `index <dir>` | Index all TS/Kotlin/Rust/C files (incremental, SHA-256 hashed) |
 | `find-symbol <name>` | Find where a symbol is defined |
 | `context <name>` | Extract the full source of a symbol |
 | `find-refs <name>` | All references to a symbol (AST-based, not grep — no false positives from comments) |
@@ -71,7 +73,9 @@ code-indexer list-symbols --file src/services/authService.ts
 | `list-files` | List all indexed files |
 | `stats` | Index summary: file count, symbol count, db size |
 
-Global flags: `--db <path>`, `--json` (NDJSON), `--llm` (LLM usage guide).
+Global flags: `--db <path>`, `--json` (NDJSON), `--no-refresh`, `--llm` (LLM usage guide).
+
+Index flags: `--max-file-size <KB>` (default 512), `--max-memory <MB>` (default 2048), `--loop` (re-run until fully indexed — for very large repos).
 
 Full reference → [wiki](../../wiki)
 
@@ -131,7 +135,7 @@ source files → tree-sitter AST → symbol + reference extraction → SQLite
 
 ## Supported languages
 
-TypeScript (`.ts`, `.tsx`) and Kotlin (`.kt`, `.kts`) out of the box.
+TypeScript (`.ts`, `.tsx`), Kotlin (`.kt`, `.kts`), Rust (`.rs`), and C (`.c`, `.h`) out of the box.
 
 Anything else tree-sitter supports — which is [a lot](https://tree-sitter.github.io/tree-sitter/#available-parsers) — can be added by writing a small config object and plugging in the grammar. No changes to the core. [See the wiki](../../wiki/Development) if you want to add one.
 
