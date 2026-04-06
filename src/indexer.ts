@@ -25,14 +25,47 @@ const SKIP_DIRS = new Set([
   'out', 'target', '__pycache__', '.cache', 'coverage', '.turbo',
 ]);
 
+// tree-sitter-rust and tree-sitter-c have prebuilt .node files; tree-sitter-kotlin only
+// has a compiled build output. All three use node-gyp-build which resolves to an absolute
+// path at build time — breaks on any other machine when embedded in a binary.
+// Using explicit relative paths lets bun build --compile embed the right .node file for
+// each compile target, same as tree-sitter-typescript already does natively.
+//
+// For non-Bun runtimes, fall back to the regular package import (node-gyp-build handles it).
+
+function kotlinLoader(): Promise<object> {
+  if (typeof process.versions.bun === 'string') {
+    // kotlin has no prebuilds; use the node-gyp compiled output
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return Promise.resolve(require('../node_modules/tree-sitter-kotlin/build/Release/tree_sitter_kotlin_binding.node') as object);
+  }
+  return import('tree-sitter-kotlin').then(m => m.default as object);
+}
+
+function rustLoader(): Promise<object> {
+  if (typeof process.versions.bun === 'string') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return Promise.resolve(require(`../node_modules/tree-sitter-rust/prebuilds/${process.platform}-${process.arch}/tree-sitter-rust.node`) as object);
+  }
+  return import('tree-sitter-rust').then(m => m.default as object);
+}
+
+function cLoader(): Promise<object> {
+  if (typeof process.versions.bun === 'string') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return Promise.resolve(require(`../node_modules/tree-sitter-c/prebuilds/${process.platform}-${process.arch}/tree-sitter-c.node`) as object);
+  }
+  return import('tree-sitter-c').then(m => m.default as object);
+}
+
 const EXT_MAP: Record<string, { config: LanguageConfig; module: () => Promise<object> }> = {
   '.ts': { config: typescriptConfig, module: () => import('tree-sitter-typescript').then(m => (m.default as { typescript: object }).typescript) },
   '.tsx': { config: typescriptConfig, module: () => import('tree-sitter-typescript').then(m => (m.default as { tsx: object }).tsx) },
-  '.kt': { config: kotlinConfig, module: () => import('tree-sitter-kotlin').then(m => m.default as object) },
-  '.kts': { config: kotlinConfig, module: () => import('tree-sitter-kotlin').then(m => m.default as object) },
-  '.rs': { config: rustConfig, module: () => import('tree-sitter-rust').then(m => m.default as object) },
-  '.c': { config: cConfig, module: () => import('tree-sitter-c').then(m => m.default as object) },
-  '.h': { config: cConfig, module: () => import('tree-sitter-c').then(m => m.default as object) },
+  '.kt': { config: kotlinConfig, module: kotlinLoader },
+  '.kts': { config: kotlinConfig, module: kotlinLoader },
+  '.rs': { config: rustConfig, module: rustLoader },
+  '.c': { config: cConfig, module: cLoader },
+  '.h': { config: cConfig, module: cLoader },
 };
 
 // Cache loaded language modules

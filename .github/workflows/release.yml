@@ -17,7 +17,7 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install && bun pm trust --all
 
       - name: Build linux-x64
         run: bun build --compile --minify-syntax --minify-whitespace --target=bun-linux-x64 ./src/index.ts --outfile ./dist/code-indexer-linux-x64
@@ -42,7 +42,7 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: bun install && bun pm trust --all
 
       - name: Build darwin-x64
         run: bun build --compile --minify-syntax --minify-whitespace --target=bun-darwin-x64 ./src/index.ts --outfile ./dist/code-indexer-macos-x64
