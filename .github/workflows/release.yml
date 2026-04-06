@@ -19,6 +19,14 @@ jobs:
       - name: Install dependencies
         run: bun install && bun pm trust --all
 
+      - name: Compile native addons from source
+        # bun build --compile embeds .node files at the paths listed in require().
+        # tree-sitter-rust/c use prebuilds on this platform, so build/Release doesn't
+        # exist yet. Compile from source so every explicit require() path resolves.
+        run: |
+          (cd node_modules/tree-sitter-rust && ../../node_modules/.bin/node-gyp rebuild)
+          (cd node_modules/tree-sitter-c && ../../node_modules/.bin/node-gyp rebuild)
+
       - name: Build linux-x64
         run: bun build --compile --minify-syntax --minify-whitespace ./src/index.ts --outfile ./dist/code-indexer-linux-x64
 
@@ -39,6 +47,8 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
+        # tree-sitter-rust/c have no linux-arm64 prebuilds, so bun pm trust --all
+        # triggers node-gyp rebuild automatically, creating build/Release/.
         run: bun install && bun pm trust --all
 
       - name: Build linux-arm64
@@ -62,6 +72,13 @@ jobs:
 
       - name: Install dependencies
         run: bun install && bun pm trust --all
+
+      - name: Compile native addons from source
+        # Same as linux-x64: prebuilds exist for darwin so build/Release is missing.
+        # Compile from source so bun build --compile can embed the build/Release path.
+        run: |
+          (cd node_modules/tree-sitter-rust && ../../node_modules/.bin/node-gyp rebuild)
+          (cd node_modules/tree-sitter-c && ../../node_modules/.bin/node-gyp rebuild)
 
       - name: Build darwin-x64
         run: bun build --compile --minify-syntax --minify-whitespace --target=bun-darwin-x64 ./src/index.ts --outfile ./dist/code-indexer-macos-x64
