@@ -28,3 +28,6 @@ Thumbs.db
 
 # Demo recording artifacts (SVG is committed, raw cast is not)
 demo.cast
+
+# Benchmark corpus (cloned at runtime, not committed)
+benchmarks/zod-corpus/

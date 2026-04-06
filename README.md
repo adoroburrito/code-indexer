@@ -10,19 +10,53 @@ Your LLM doesn't need the whole file. It needs the function.
 
 ## Why this exists
 
-You ask an LLM to trace a bug through a TypeScript codebase. It reads `userService.ts` — 4,847 tokens. Not there. Reads `authMiddleware.ts` — another 3,200 tokens. Keeps going. By the time it finds the right function it's burned 20k tokens on navigation, and you're halfway through your context window before the actual work starts.
+You ask an LLM to trace a bug through a TypeScript codebase. It reads `userService.ts` — thousands of tokens. Not there. Reads `authMiddleware.ts` — more tokens. Keeps going. By the time it finds the right function it's burned 20k tokens on navigation, and you're halfway through your context window before the actual work starts.
 
 The function it needed was 30 lines long.
 
-**Measured on [colinhacks/zod](https://github.com/colinhacks/zod) — 389 files, real production library:**
+**Measured on [colinhacks/zod](https://github.com/colinhacks/zod) — 389 TypeScript files, 3,831 symbols, real production library:**
 
 | Approach | Median tokens to retrieve a symbol | Recall |
 |---|---|---|
-| Read full file | 4,847 | 100% |
-| grep ±10 lines | 412 | 100% |
-| **code-indexer** | **130** | **100%** |
+| Read full file | 7,391 | 100% |
+| grep ±10 lines | 188 | 100% |
+| **code-indexer** | **40** | **100%** |
 
-Same recall. 97% fewer tokens. And LLM quality went up — Claude Haiku scored **3.29/4** with code-indexer vs **3.00/4** reading full files. Less noise gives the model less to get confused by.
+Same recall. 99% fewer tokens than reading the full file. 79% fewer than grep.
+
+<details>
+<summary>How were these numbers measured?</summary>
+
+**Corpus:** [`colinhacks/zod`](https://github.com/colinhacks/zod) at commit [`c780507`](https://github.com/colinhacks/zod/commit/c7805073fef5b6b8857307c3d4b3597a70613bc2) — 389 TypeScript files, 3,831 module-level symbols.
+
+**Sample:** All module-level symbols (classes, functions, interfaces, types, enums) indexed by `code-indexer`. No manual cherry-picking — every symbol the tool finds gets measured.
+
+**Token counting:** `Math.ceil(characters / 4)` — a standard approximation within ~5% of cl100k_base and Claude tokenizers for source code. [Verified independently](https://platform.openai.com/tokenizer) on several zod files.
+
+**How each approach retrieves a symbol:**
+
+| Approach | What the LLM actually receives |
+|---|---|
+| Read full file | The entire `.ts` file that contains the symbol — median 7,391 tokens, max 40,082 |
+| grep ±10 lines | Lines `[definition_start − 10, definition_end + 10]` — median 188 tokens |
+| code-indexer | `code-indexer context <name>` — exact symbol source only — median 40 tokens, max 4,530 |
+
+**Recall** is 100% for all three because zod uses standard TypeScript declarations — no dynamic exports or runtime symbol generation that would defeat static analysis. code-indexer uses Tree-sitter ASTs, not regex, so it correctly identifies symbol boundaries even for multi-line class bodies and complex generics.
+
+Even at worst case (a 40,082-token file), code-indexer returns at most 4,530 tokens — a 9× saving when the file is at its largest.
+
+**Reproduce it yourself:**
+
+```bash
+git clone https://github.com/adoroburrito/code-indexer
+cd code-indexer
+bun install
+git clone --depth=1 https://github.com/colinhacks/zod benchmarks/zod-corpus
+bun benchmarks/token-comparison.ts
+```
+
+</details>
+
 
 ---
 
@@ -36,12 +70,12 @@ Works on Linux (x64) and macOS (x64 + Apple Silicon). No Node.js required.
 
 Prebuilt binaries on the [Releases page](https://github.com/adoroburrito/code-indexer/releases) if you prefer to download directly.
 
-**Build from source** (requires Node.js 20):
+**Build from source** (requires [Bun](https://bun.sh)):
 ```bash
 git clone https://github.com/adoroburrito/code-indexer
 cd code-indexer
-npm install && npm run build
-npm link
+bun install
+bun run build  # produces dist/code-indexer
 ```
 
 ---
@@ -49,7 +83,7 @@ npm link
 ## Quick start
 
 ```bash
-# build the index (~2s on a medium-sized repo)
+# build the index (zod's 389 files index in under 2s)
 code-indexer index ./my-project
 
 # get the lay of the land
@@ -138,7 +172,7 @@ source files → tree-sitter AST → symbol + reference extraction → SQLite
 - **Symbols** extracted by AST node type — no regex, no heuristics
 - **References** are every identifier leaf not part of a definition; comments and strings excluded by construction
 - **Incremental indexing** via SHA-256 per file — re-running skips unchanged files
-- **Single SQLite file**, 3 tables, 5 indexes, WAL mode
+- **Single SQLite file**, 4 tables, 5 indexes, WAL mode
 
 ---
 
