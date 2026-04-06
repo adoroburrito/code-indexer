@@ -34,6 +34,7 @@
   "trustedDependencies": [
     "tree-sitter-c",
     "tree-sitter-javascript",
+    "tree-sitter-kotlin",
     "tree-sitter-rust"
   ]
 }
