@@ -153,7 +153,49 @@ source files → Tree-sitter AST → symbol + reference extraction → SQLite
 
 TypeScript (`.ts`, `.tsx`), Kotlin (`.kt`, `.kts`), Rust (`.rs`), C (`.c`, `.h`)
 
-Anything else Tree-sitter supports can be added with a small config object — no changes to the core. [See the wiki](../../wiki/Development).
+---
+
+## Add your own language
+
+If code-indexer is useful to you and your language isn't on the list, adding it is straightforward — Tree-sitter has grammars for [a lot of languages](https://tree-sitter.github.io/tree-sitter/#available-parsers), and plugging one in requires no changes to the core.
+
+All you need is a `LanguageConfig` object. Here's what the TypeScript one looks like:
+
+```ts
+export const typescriptConfig: LanguageConfig = {
+  language: 'typescript',
+  extensions: ['.ts', '.tsx'],
+  symbolMap: {
+    // tree-sitter node type → kind stored in the index
+    function_declaration: 'function',
+    class_declaration:    'class',
+    interface_declaration: 'interface',
+    method_definition:    'method',
+    lexical_declaration:  'variable',
+    enum_declaration:     'enum',
+    type_alias_declaration: 'type',
+  },
+  // which child node types hold the symbol's name (checked in order)
+  nameNodeTypes: ['identifier', 'type_identifier', 'property_identifier'],
+  // optional: only index this node type when its AST parent is one of these
+  parentConstraints: {
+    lexical_declaration: ['program', 'export_statement'],
+  },
+};
+```
+
+**To add a new language:**
+
+1. `bun add tree-sitter-<yourlang>` — install the grammar
+2. Create `src/languages/<yourlang>.ts` with a `LanguageConfig` — map the AST node types you care about to symbol kinds
+3. Register it in `src/indexer.ts` — add the file extensions to `EXT_MAP` pointing at your config and the grammar loader
+4. Open a PR if you think others would find it useful
+
+The trickiest part is usually step 2: figuring out what Tree-sitter calls things in a given language. The fastest way is to run the Tree-sitter playground on a sample file and look at the AST it produces — then map those node type names into `symbolMap`.
+
+`parentConstraints` is useful when a node type appears at multiple levels (e.g. a variable declaration inside a function vs. at module scope) and you only want to index the top-level ones.
+
+For anything more complex — custom name extraction, node filtering — see the [`LanguageConfig` interface](src/languages/types.ts) and the [wiki](../../wiki/Development).
 
 ---
 
