@@ -44,16 +44,34 @@ function kotlinLoader(): Promise<object> {
 
 function rustLoader(): Promise<object> {
   if (typeof process.versions.bun === 'string') {
+    // Bun's bundler statically resolves require() paths at compile time, so we can't
+    // use a template literal. Enumerate explicit paths; linux-arm64 has no prebuild so
+    // falls back to the node-gyp compiled output (produced by `bun pm trust --all`).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return Promise.resolve(require(`../node_modules/tree-sitter-rust/prebuilds/${process.platform}-${process.arch}/tree-sitter-rust.node`) as object);
+    if (process.platform === 'darwin' && process.arch === 'x64') return Promise.resolve(require('../node_modules/tree-sitter-rust/prebuilds/darwin-x64/tree-sitter-rust.node') as object);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (process.platform === 'darwin' && process.arch === 'arm64') return Promise.resolve(require('../node_modules/tree-sitter-rust/prebuilds/darwin-arm64/tree-sitter-rust.node') as object);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (process.platform === 'linux' && process.arch === 'x64') return Promise.resolve(require('../node_modules/tree-sitter-rust/prebuilds/linux-x64/tree-sitter-rust.node') as object);
+    // linux-arm64 (and any other platform): compiled from source by node-gyp
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return Promise.resolve(require('../node_modules/tree-sitter-rust/build/Release/tree_sitter_rust_binding.node') as object);
   }
   return import('tree-sitter-rust').then(m => m.default as object);
 }
 
 function cLoader(): Promise<object> {
   if (typeof process.versions.bun === 'string') {
+    // Same strategy as rustLoader — explicit paths, linux-arm64 falls back to build/Release.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return Promise.resolve(require(`../node_modules/tree-sitter-c/prebuilds/${process.platform}-${process.arch}/tree-sitter-c.node`) as object);
+    if (process.platform === 'darwin' && process.arch === 'x64') return Promise.resolve(require('../node_modules/tree-sitter-c/prebuilds/darwin-x64/tree-sitter-c.node') as object);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (process.platform === 'darwin' && process.arch === 'arm64') return Promise.resolve(require('../node_modules/tree-sitter-c/prebuilds/darwin-arm64/tree-sitter-c.node') as object);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (process.platform === 'linux' && process.arch === 'x64') return Promise.resolve(require('../node_modules/tree-sitter-c/prebuilds/linux-x64/tree-sitter-c.node') as object);
+    // linux-arm64 (and any other platform): compiled from source by node-gyp
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return Promise.resolve(require('../node_modules/tree-sitter-c/build/Release/tree_sitter_c_binding.node') as object);
   }
   return import('tree-sitter-c').then(m => m.default as object);
 }
