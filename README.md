@@ -4,7 +4,7 @@ Your LLM doesn't need the whole file. It needs the function.
 
 <img src="demo.svg" alt="code-indexer demo" width="100%">
 
-Index a codebase once. Query any symbol by name — get its source, its definition, everything that references it. No file reading. No grep. No context waste.
+Index a codebase once, then pull any symbol by name and get its source, definition, and callers — without reading a single file.
 
 ---
 
@@ -21,7 +21,7 @@ Prefer a direct download? [Releases page](https://github.com/adoroburrito/code-i
 
 ## Why it exists
 
-Reading full files to find a function is the most expensive way to navigate code. By the time an LLM finds what it needs, it's burned through half your context window on irrelevant lines.
+When an LLM reads entire files to find one function, most of those tokens are noise. By the time it locates what it needs, it's already burned through a chunk of your context window.
 
 **Measured on [colinhacks/zod](https://github.com/colinhacks/zod) — 389 TypeScript files, 3,831 symbols:**
 
@@ -31,28 +31,28 @@ Reading full files to find a function is the most expensive way to navigate code
 | grep ±10 lines | 188 | 100% |
 | **code-indexer** | **40** | **100%** |
 
-**99% fewer tokens than reading the full file. 79% fewer than grep. Same recall.**
+99% fewer tokens than reading full files, 79% fewer than grep. Recall is identical.
 
 <details>
 <summary>How were these numbers measured?</summary>
 
 **Corpus:** [`colinhacks/zod`](https://github.com/colinhacks/zod) at commit [`c780507`](https://github.com/colinhacks/zod/commit/c7805073fef5b6b8857307c3d4b3597a70613bc2) — 389 TypeScript files, 3,831 module-level symbols.
 
-**Sample:** All module-level symbols (classes, functions, interfaces, types, enums) indexed by `code-indexer`. No manual cherry-picking — every symbol the tool finds gets measured.
+**Sample:** All module-level symbols (classes, functions, interfaces, types, enums) indexed by `code-indexer`. No cherry-picking; every symbol the tool finds gets measured.
 
-**Token counting:** `Math.ceil(characters / 4)` — a standard approximation within ~5% of cl100k_base and Claude tokenizers for source code. [Verified independently](https://platform.openai.com/tokenizer) on several zod files.
+**Token counting:** `Math.ceil(characters / 4)`, a standard approximation within ~5% of cl100k_base and Claude tokenizers for source code. [Verified independently](https://platform.openai.com/tokenizer) on several zod files.
 
 **How each approach retrieves a symbol:**
 
 | Approach | What the LLM actually receives |
 |---|---|
-| Read full file | The entire `.ts` file that contains the symbol — median 7,391 tokens, max 40,082 |
-| grep ±10 lines | Lines `[definition_start − 10, definition_end + 10]` — median 188 tokens |
-| code-indexer | `code-indexer context <name>` — exact symbol source only — median 40 tokens, max 4,530 |
+| Read full file | The entire `.ts` file containing the symbol (median 7,391 tokens, max 40,082) |
+| grep ±10 lines | Lines `[definition_start − 10, definition_end + 10]` (median 188 tokens) |
+| code-indexer | `code-indexer context <name>` output (median 40 tokens, max 4,530) |
 
-**Recall** is 100% for all three because zod uses standard TypeScript declarations — no dynamic exports or runtime symbol generation that would defeat static analysis. code-indexer uses Tree-sitter ASTs, not regex, so it correctly identifies symbol boundaries even for multi-line class bodies and complex generics.
+Recall is 100% for all three because zod uses standard TypeScript declarations with no dynamic exports or runtime symbol generation. code-indexer uses Tree-sitter ASTs rather than regex, so symbol boundaries are correct even for multi-line class bodies and complex generics.
 
-Even at worst case (a 40,082-token file), code-indexer returns at most 4,530 tokens — a 9× saving when the file is at its largest.
+On the worst file in the corpus (40,082 tokens), code-indexer returned 4,530 — 9× less, even in the extreme case.
 
 **Reproduce it yourself:**
 
@@ -74,7 +74,7 @@ bun benchmarks/token-comparison.ts
 # index once (zod's 389 files take under 2s)
 code-indexer index ./my-project
 
-# get the source of a symbol — not the whole file it lives in
+# show just that symbol's source, not the whole file
 code-indexer context UserService
 
 # find everything that calls it before you change it
@@ -90,7 +90,7 @@ code-indexer list-symbols --file src/auth.ts
 code-indexer stats
 ```
 
-Query commands auto-refresh — they detect changed files and re-index before answering. No need to re-run `index` between edits.
+Query commands keep the index fresh on their own. If a file changed since the last run, it gets re-indexed before the query answers. You don't need to re-run `index` manually.
 
 ---
 
@@ -101,8 +101,8 @@ Query commands auto-refresh — they detect changed files and re-index before an
 | `index <dir>` | Build or update the index (incremental, SHA-256 per file) |
 | `find-symbol <name>` | Where is this defined? |
 | `context <name>` | Show the full source of a symbol |
-| `find-refs <name>` | Every reference (AST-based — comments and strings can't match) |
-| `list-symbols` | List symbols — filter with `--file` or `--kind` |
+| `find-refs <name>` | Every reference (AST-based, so comments and strings don't count) |
+| `list-symbols` | List symbols, filter with `--file` or `--kind` |
 | `list-files` | List indexed files |
 | `stats` | File count, symbol count, db size |
 
@@ -115,7 +115,7 @@ Full reference → [wiki](../../wiki)
 
 ## Works with everything
 
-Data to stdout. Errors to stderr. Tab-delimited by default. `--json` for NDJSON.
+stdout for data, stderr for errors, tab-delimited by default with `--json` for NDJSON.
 
 ```bash
 # how many files depend on this?
@@ -128,10 +128,10 @@ code-indexer list-symbols | grep -i "error\|handler"
 code-indexer list-symbols --kind interface --json | jq '.name'
 ```
 
-LLM agents can bootstrap themselves without any external docs:
+LLM agents can figure it out without external docs:
 
 ```bash
-code-indexer --llm  # prints workflow docs, token cost estimates, navigation patterns to stdout
+code-indexer --llm  # full usage guide, token cost estimates, navigation patterns
 ```
 
 ---
@@ -142,10 +142,10 @@ code-indexer --llm  # prints workflow docs, token cost estimates, navigation pat
 source files → Tree-sitter AST → symbol + reference extraction → SQLite
 ```
 
-- **No regex.** Symbols come from AST node types — no heuristics.
-- **No comment noise.** References are identifier leaves outside definitions. Strings and comments can't produce false positives by construction.
-- **Incremental.** SHA-256 per file — re-running skips anything unchanged.
-- **One file.** Single SQLite db: 4 tables, 5 indexes, WAL mode.
+- Symbols come from AST node types. No regex, no heuristics.
+- References only match identifier leaves outside definitions, so strings and comments can't produce false positives.
+- Re-running `index` is safe; unchanged files are skipped via SHA-256.
+- Everything lives in one SQLite file: 4 tables, 5 indexes, WAL mode.
 
 ---
 
@@ -157,9 +157,9 @@ TypeScript (`.ts`, `.tsx`), Kotlin (`.kt`, `.kts`), Rust (`.rs`), C (`.c`, `.h`)
 
 ## Add your own language
 
-If code-indexer is useful to you and your language isn't on the list, adding it is straightforward — Tree-sitter has grammars for [a lot of languages](https://tree-sitter.github.io/tree-sitter/#available-parsers), and plugging one in requires no changes to the core.
+If your language isn't listed, it's not hard to add. Tree-sitter has grammars for [a lot of languages](https://tree-sitter.github.io/tree-sitter/#available-parsers) and the core doesn't need to change.
 
-All you need is a `LanguageConfig` object. Here's what the TypeScript one looks like:
+You need one config object. Here's the TypeScript one:
 
 ```ts
 export const typescriptConfig: LanguageConfig = {
@@ -184,18 +184,18 @@ export const typescriptConfig: LanguageConfig = {
 };
 ```
 
-**To add a new language:**
+**Steps:**
 
-1. `bun add tree-sitter-<yourlang>` — install the grammar
-2. Create `src/languages/<yourlang>.ts` with a `LanguageConfig` — map the AST node types you care about to symbol kinds
-3. Register it in `src/indexer.ts` — add the file extensions to `EXT_MAP` pointing at your config and the grammar loader
-4. Open a PR if you think others would find it useful
+1. `bun add tree-sitter-<yourlang>` to install the grammar
+2. Create `src/languages/<yourlang>.ts` with a `LanguageConfig`, mapping AST node types to symbol kinds
+3. Register it in `src/indexer.ts` by adding your extensions to `EXT_MAP`
+4. Open a PR if it might be useful to others
 
-The trickiest part is usually step 2: figuring out what Tree-sitter calls things in a given language. The fastest way is to run the Tree-sitter playground on a sample file and look at the AST it produces — then map those node type names into `symbolMap`.
+Step 2 takes the most time. The hard part is figuring out what Tree-sitter calls things in a given language. Fire up the [Tree-sitter playground](https://tree-sitter.github.io/tree-sitter/playground), paste a sample file, and look at the AST. Those node type names go in `symbolMap`.
 
-`parentConstraints` is useful when a node type appears at multiple levels (e.g. a variable declaration inside a function vs. at module scope) and you only want to index the top-level ones.
+`parentConstraints` matters when a node type shows up at multiple levels — say, a variable declaration both inside a function and at module scope. Use it to only index the top-level ones.
 
-For anything more complex — custom name extraction, node filtering — see the [`LanguageConfig` interface](src/languages/types.ts) and the [wiki](../../wiki/Development).
+If you need something fancier (custom name extraction, filtering out specific nodes), check the [`LanguageConfig` interface](src/languages/types.ts) or the [wiki](../../wiki/Development).
 
 ---
 
